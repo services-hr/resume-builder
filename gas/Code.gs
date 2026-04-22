@@ -235,12 +235,6 @@ const SHEET_COLUMNS = [
   "firstname",            // 名（HubSpot標準）
   "lastname_kana",        // 姓フリガナ（カスタム）
   "firstname_kana",       // 名フリガナ（カスタム）
-  "email",                // メール（HubSpot標準）
-  "phone",                // 電話（HubSpot標準）
-  "address",              // 住所（HubSpot標準）
-  "birth_date",           // 生年月日（カスタム・YYYY-MM-DD）
-  "age",                  // 年齢（カスタム・数値）
-  "nearest_station",      // 最寄駅（カスタム）
   "jobtitle",             // 現職役職（HubSpot標準）
   "current_company",      // 現職会社名（HubSpot標準 company）
 
@@ -317,12 +311,6 @@ function buildSheetRow(data, pdfResult) {
     firstname: safe(basic.firstName),
     lastname_kana: safe(basic.lastNameKana),
     firstname_kana: safe(basic.firstNameKana),
-    email: safe(basic.email),
-    phone: safe(basic.phone),
-    address: safe(basic.address),
-    birth_date: safe(basic.birthDate),
-    age: basic.birthDate ? parseInt(calcAge(basic.birthDate), 10) : "",
-    nearest_station: safe(basic.nearestStation),
     jobtitle: safe(currentCareer.position),
     current_company: safe(currentCareer.company),
 
@@ -416,11 +404,6 @@ function testGenerate() {
       firstName: "太郎",
       lastNameKana: "ヤマダ",
       firstNameKana: "タロウ",
-      birthDate: "1990-05-15",
-      email: "yamada@example.com",
-      phone: "090-1234-5678",
-      address: "東京都渋谷区恵比寿1-2-3",
-      nearestStation: "JR恵比寿駅 徒歩5分",
     },
     careers: [
       {
