@@ -197,7 +197,6 @@ export default function ResumeBuilder() {
   const [basic, setBasic] = useState({
     lastName: "", firstName: "",
     lastNameKana: "", firstNameKana: "",
-    birthDate: "", email: "", phone: "", address: "", nearestStation: "",
   });
   const [careers, setCareers] = useState(() => [mkCareer()]);
   const [skillsRaw, setSkillsRaw] = useState("");
@@ -326,23 +325,12 @@ export default function ResumeBuilder() {
         return (
           <div>
             <h2 style={st.h2}>基本情報を入力してください</h2>
-            <p style={st.desc}>求職者の基本的なプロフィール情報です。</p>
+            <p style={st.desc}>お名前とフリガナを入力してください。</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0 4%" }}>
               <FormInput label="姓" value={basic.lastName} onChange={(v) => uBasic("lastName", v)} placeholder="山田" required half />
               <FormInput label="名" value={basic.firstName} onChange={(v) => uBasic("firstName", v)} placeholder="太郎" required half />
               <FormInput label="姓（フリガナ）" value={basic.lastNameKana} onChange={(v) => uBasic("lastNameKana", v)} placeholder="ヤマダ" half />
               <FormInput label="名（フリガナ）" value={basic.firstNameKana} onChange={(v) => uBasic("firstNameKana", v)} placeholder="タロウ" half />
-              <FormInput label="生年月日" type="date" value={basic.birthDate} onChange={(v) => uBasic("birthDate", v)} required half />
-              <div style={{ width: "48%", marginBottom: 16 }}>
-                <label style={st.label}>年齢（自動計算）</label>
-                <div style={{ ...st.input, background: "#f5f3f0", color: P.sub }}>
-                  {basic.birthDate ? calcAge(basic.birthDate).replace(/[（）]/g, "") : "—"}
-                </div>
-              </div>
-              <FormInput label="メールアドレス" type="email" value={basic.email} onChange={(v) => uBasic("email", v)} placeholder="example@mail.com" half />
-              <FormInput label="電話番号" value={basic.phone} onChange={(v) => uBasic("phone", v)} placeholder="090-1234-5678" half />
-              <FormInput label="現住所" value={basic.address} onChange={(v) => uBasic("address", v)} placeholder="東京都渋谷区恵比寿1-2-3" />
-              <FormInput label="最寄駅" value={basic.nearestStation} onChange={(v) => uBasic("nearestStation", v)} placeholder="JR恵比寿駅 徒歩5分" half />
             </div>
           </div>
         );
@@ -507,18 +495,6 @@ export default function ResumeBuilder() {
                     <span style={{ fontSize: 16, fontWeight: 700 }}>
                       {(basic.lastName || basic.firstName) ? `${basic.lastName || ""} ${basic.firstName || ""}`.trim() : "—"}
                     </span>
-                    {basic.birthDate && <span style={{ fontSize: 12, color: P.sub, marginLeft: 8 }}>{formatDate(basic.birthDate)} 生 {calcAge(basic.birthDate)}</span>}
-                  </td>
-                </tr>
-                <tr>
-                  <th style={st.thP}>連絡先</th>
-                  <td style={st.tdP}>
-                    {basic.address && <div>{basic.address}</div>}
-                    <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 13 }}>
-                      {basic.phone && <span>TEL: {basic.phone}</span>}
-                      {basic.email && <span>Email: {basic.email}</span>}
-                    </div>
-                    {basic.nearestStation && <div style={{ fontSize: 12, color: P.sub }}>最寄駅: {basic.nearestStation}</div>}
                   </td>
                 </tr>
               </tbody></table>
