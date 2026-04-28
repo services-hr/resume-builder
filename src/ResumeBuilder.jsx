@@ -52,12 +52,12 @@ const st = {
 };
 
 /* ─── AI call (via serverless function) ─── */
-async function callRefineAPI(type, text, context) {
+async function callRefineAPI(type, text, context, extra) {
   try {
     const res = await fetch("/api/refine", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type, text, context }),
+      body: JSON.stringify({ type, text, context, ...(extra || {}) }),
     });
     const data = await res.json();
     return data.result || null;
@@ -208,7 +208,6 @@ export default function ResumeBuilder() {
   const [prRefining, setPrRefining] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(""); // "", "generating", "uploading", "done", "error"
   const [uploadMessage, setUploadMessage] = useState("");
-  const [driveLink, setDriveLink] = useState("");
   const pdfRef = useRef(null);
 
   const goTo = (i) => { setAnim(false); setTimeout(() => { setStep(i); setAnim(true); }, 140); };
@@ -228,7 +227,23 @@ export default function ResumeBuilder() {
     const c = careers.find((x) => x.id === id);
     if (!c || !c.rawDescription.trim()) return;
     uCareer(id, "isRefining", true);
-    const r = await callRefineAPI("career", c.rawDescription, `会社名：${c.company}、役職：${c.position}`);
+
+    // 期間文字列を組み立て
+    const fromStr = (c.fromYear && c.fromMonth) ? `${c.fromYear}年${c.fromMonth}月` : "";
+    const toStr = c.isCurrent ? "現在" : ((c.toYear && c.toMonth) ? `${c.toYear}年${c.toMonth}月` : "");
+    const periodStr = (fromStr && toStr) ? `${fromStr} 〜 ${toStr}` : (fromStr || "");
+
+    // 現職用にcontextをリッチに（プロンプト内でフォーマットに使われる）
+    const context = c.isCurrent
+      ? `${periodStr}`
+      : `会社名：${c.company}、役職：${c.position}`;
+
+    const r = await callRefineAPI(
+      "career",
+      c.rawDescription,
+      context,
+      { isCurrent: !!c.isCurrent },
+    );
     if (r) uCareer(id, "refinedDescription", r);
     uCareer(id, "isRefining", false);
   }, [careers, uCareer]);
@@ -266,7 +281,6 @@ export default function ResumeBuilder() {
      文字コピー・検索・日本語フォントがすべて自然に成立する。
   */
   const handleGenerateAndUpload = async () => {
-    setDriveLink("");
     setUploadStatus("generating");
     setUploadMessage("PDFを生成中… (Googleドキュメントで差し込み中)");
 
@@ -305,7 +319,6 @@ export default function ResumeBuilder() {
       if (res.ok && result.success) {
         setUploadStatus("done");
         setUploadMessage(`✅ PDF生成・Google Drive保存が完了しました：${result.fileName}`);
-        if (result.webViewLink) setDriveLink(result.webViewLink);
       } else {
         setUploadStatus("error");
         setUploadMessage(`❌ 生成に失敗しました：${result.error || "不明なエラー"}`);
@@ -343,6 +356,53 @@ export default function ResumeBuilder() {
               業務内容はメモ書き・箇条書きでOK。
               <strong style={{ color: P.accent }}>「AIで整える」</strong>で職務経歴書向けに変換できます。
             </p>
+
+            {/* 注意書きボックス */}
+            <div style={{
+              background: "#fffcf0",
+              border: `1.5px solid ${P.accent}`,
+              borderRadius: 10,
+              padding: "14px 16px",
+              marginBottom: 20,
+              fontSize: 13,
+              lineHeight: 1.7,
+              color: P.text,
+            }}>
+              <div style={{ fontWeight: 700, color: P.accent, marginBottom: 8, fontSize: 14 }}>
+                ⚠️ 「AIで整える」を押す前にご確認ください
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                AIが正確な情報を取得するため、以下を<strong>正式名称で</strong>記載してください：
+              </div>
+              <ul style={{ margin: "0 0 10px", paddingLeft: 20 }}>
+                <li><strong>会社欄</strong>：正式な会社名（例：「荏原」ではなく「株式会社荏原製作所」）</li>
+                <li><strong>役職・部署欄</strong>：正式な役職名・部署名</li>
+              </ul>
+              <div style={{ marginBottom: 8 }}>
+                業務内容のメモには、可能な範囲で以下を含めると整形精度が上がります：
+              </div>
+              <ul style={{ margin: "0 0 10px", paddingLeft: 20 }}>
+                <li>雇用形態（正社員／契約社員／派遣／業務委託 など）</li>
+                <li>職種（開発・設計／営業／マーケティング など）</li>
+                <li>対応した商材・サービス</li>
+              </ul>
+              <div style={{
+                background: "#fff",
+                padding: "8px 10px",
+                borderRadius: 6,
+                fontSize: 12,
+                color: P.sub,
+                lineHeight: 1.6,
+              }}>
+                💡 <strong>会社情報がWeb検索で取得できない場合</strong>（同名企業が存在する、非公開企業、海外企業など）、
+                事業内容・売上高・従業員数・上場区分は<strong>空欄で出力されます</strong>。
+                推測で誤った情報を埋めることはありません。
+                <br />
+                ※ Web検索による企業情報の取得は<strong>「現職」（現在もその会社に在籍中）の経歴のみ</strong>で実行されます。
+                過去の職歴は業務内容のメモを整形するだけです。
+              </div>
+            </div>
+
             {careers.map((c, i) => (
               <div key={c.id} style={st.itemCard}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
@@ -571,14 +631,6 @@ export default function ResumeBuilder() {
                   color: uploadStatus === "done" ? P.primary : P.danger,
                 }}>
                   {uploadMessage}
-                  {driveLink && (
-                    <div style={{ marginTop: 8 }}>
-                      <a href={driveLink} target="_blank" rel="noreferrer"
-                        style={{ color: P.primary, fontWeight: 600, textDecoration: "underline" }}>
-                        → Google Driveで開く
-                      </a>
-                    </div>
-                  )}
                 </div>
               )}
 
