@@ -224,8 +224,7 @@ export default function ResumeBuilder() {
   const rmQualFn = useCallback((id) => setQuals((q) => q.length > 1 ? q.filter((x) => x.id !== id) : q), []);
 
   const handleRefineCareer = useCallback(async (id) => {
-    const idx = careers.findIndex((x) => x.id === id);
-    const c = careers[idx];
+    const c = careers.find((x) => x.id === id);
     if (!c || !c.rawDescription.trim()) return;
     uCareer(id, "isRefining", true);
 
@@ -242,15 +241,8 @@ export default function ResumeBuilder() {
     if (periodStr) contextParts.push(`在籍期間：${periodStr}`);
     const context = contextParts.join("、");
 
-    // 「最新の経歴」= 配列の先頭（index 0）でWeb検索を実行
-    const isLatest = idx === 0;
-
-    const r = await callRefineAPI(
-      "career",
-      c.rawDescription,
-      context,
-      { isLatest },
-    );
+    // すべての経歴でWeb検索＋フォーマット適用
+    const r = await callRefineAPI("career", c.rawDescription, context);
     if (r) uCareer(id, "refinedDescription", r);
     uCareer(id, "isRefining", false);
   }, [careers, uCareer]);
@@ -380,18 +372,34 @@ export default function ResumeBuilder() {
               <div style={{ marginBottom: 8 }}>
                 AIが正確な情報を取得するため、以下を<strong>正式名称で</strong>記載してください：
               </div>
-              <ul style={{ margin: "0 0 10px", paddingLeft: 20 }}>
+              <ul style={{ margin: "0 0 12px", paddingLeft: 20 }}>
                 <li><strong>会社欄</strong>：正式な会社名（例：「荏原」ではなく「株式会社荏原製作所」）</li>
                 <li><strong>役職・部署欄</strong>：正式な役職名・部署名</li>
               </ul>
-              <div style={{ marginBottom: 8 }}>
-                業務内容のメモには、可能な範囲で以下を含めると整形精度が上がります：
+
+              <div style={{
+                background: "#fff",
+                padding: "10px 12px",
+                borderRadius: 6,
+                marginBottom: 10,
+                lineHeight: 1.65,
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 6, color: P.text }}>
+                  📝 業務内容のメモに含めるべき項目（チェックリスト）
+                </div>
+                <div style={{ fontSize: 11, color: P.sub, marginBottom: 6 }}>
+                  以下の項目はAIがメモから抽出します。記載がないと出力が空欄になります。
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12 }}>
+                  <li>☐ <strong>雇用形態</strong>（正社員／契約社員／派遣／業務委託 など）</li>
+                  <li>☐ <strong>職種</strong>（開発・設計／営業／マーケティング など）</li>
+                  <li>☐ <strong>対応商材</strong>（取り扱った製品・サービス）</li>
+                  <li>☐ <strong>業務内容</strong>（具体的に行った仕事の中身）</li>
+                  <li>☐ <strong>実績</strong>（具体的な数字や成果）</li>
+                  <li>☐ <strong>工夫した点</strong>（こだわり・問題解決の事例）</li>
+                </ul>
               </div>
-              <ul style={{ margin: "0 0 10px", paddingLeft: 20 }}>
-                <li>雇用形態（正社員／契約社員／派遣／業務委託 など）</li>
-                <li>職種（開発・設計／営業／マーケティング など）</li>
-                <li>対応した商材・サービス</li>
-              </ul>
+
               <div style={{
                 background: "#fff",
                 padding: "8px 10px",
@@ -404,8 +412,7 @@ export default function ResumeBuilder() {
                 事業内容・売上高・従業員数・上場区分は<strong>空欄で出力されます</strong>。
                 推測で誤った情報を埋めることはありません。
                 <br />
-                ※ Web検索による企業情報の取得は<strong>「経歴1（最新の経歴）」のみ</strong>で実行されます。
-                それ以外の経歴は業務内容のメモを整形するだけです。
+                ※ Web検索による企業情報の取得は<strong>すべての経歴で実行</strong>されます。
               </div>
             </div>
 

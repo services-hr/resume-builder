@@ -1,14 +1,13 @@
 /**
  * AI整形API
  *
- * - career(最新の経歴)：Web検索で企業情報を取得し、フォーマットに沿った構造化出力
- * - career(それ以外)：業務内容メモを整形するだけ
- * - skills, pr：従来通りの整形
+ * - career：すべての経歴でWeb検索＋フォーマット適用
+ * - skills, pr：通常の整形（検索なし）
  */
 
 /* ─── プロンプト定義 ─── */
 
-// 最新の経歴用：Web検索を活用してフォーマット出力
+// 経歴整形用：Web検索を活用してフォーマット出力
 const buildCurrentCareerPrompt = (text, context) => `あなたは中途採用向けの職務経歴書を作成するプロのキャリアアドバイザーです。
 
 以下の経歴情報を、指定のフォーマットに沿って整えてください。
@@ -71,14 +70,6 @@ ${context || "（記載なし）"}
 --- 業務内容メモ ---
 ${text}`;
 
-// それ以外の経歴用：業務内容のみ整える（検索なし）
-const buildPastCareerPrompt = (text, context) => `あなたは中途採用向けの職務経歴書を作成するプロのキャリアアドバイザーです。
-以下のメモ書きを職務経歴書に載せるのにふさわしい文章に整えてください。
-ルール：簡潔かつ具体的（数字を活かす）、体言止めや「〜を担当」の書き方、3〜5行、元の意味を変えない、整えた文章だけ返す。
-${context ? `背景：${context}` : ""}
---- 入力 ---
-${text}`;
-
 const buildSkillsPrompt = (text) => `あなたは中途採用向けの職務経歴書を作成するプロのキャリアアドバイザーです。
 以下のメモ書きを職務経歴書の「スキル」欄にふさわしい形に整えてください。
 
@@ -107,7 +98,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { type, text, context, isLatest } = req.body;
+  const { type, text, context } = req.body;
 
   if (!type || !text) {
     return res.status(400).json({ error: "type and text are required" });
@@ -123,12 +114,9 @@ export default async function handler(req, res) {
   let useWebSearch = false;
 
   if (type === "career") {
-    if (isLatest) {
-      prompt = buildCurrentCareerPrompt(text, context);
-      useWebSearch = true; // 最新の経歴のみWeb検索
-    } else {
-      prompt = buildPastCareerPrompt(text, context);
-    }
+    // すべての経歴でWeb検索＋フォーマット適用
+    prompt = buildCurrentCareerPrompt(text, context);
+    useWebSearch = true;
   } else if (type === "skills") {
     prompt = buildSkillsPrompt(text);
   } else if (type === "pr") {
@@ -144,7 +132,7 @@ export default async function handler(req, res) {
     messages: [{ role: "user", content: prompt }],
   };
 
-  // Web検索ツールを有効化（最新の経歴のみ）
+  // Web検索ツールを有効化（career全体）
   if (useWebSearch) {
     requestBody.tools = [
       {
