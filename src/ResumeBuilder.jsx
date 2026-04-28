@@ -233,10 +233,12 @@ export default function ResumeBuilder() {
     const toStr = c.isCurrent ? "現在" : ((c.toYear && c.toMonth) ? `${c.toYear}年${c.toMonth}月` : "");
     const periodStr = (fromStr && toStr) ? `${fromStr} 〜 ${toStr}` : (fromStr || "");
 
-    // 現職用にcontextをリッチに（プロンプト内でフォーマットに使われる）
-    const context = c.isCurrent
-      ? `${periodStr}`
-      : `会社名：${c.company}、役職：${c.position}`;
+    // 会社名・役職・期間をすべて context に含めて渡す
+    const contextParts = [];
+    if (c.company) contextParts.push(`会社名：${c.company}`);
+    if (c.position) contextParts.push(`役職・部署：${c.position}`);
+    if (periodStr) contextParts.push(`在籍期間：${periodStr}`);
+    const context = contextParts.join("、");
 
     const r = await callRefineAPI(
       "career",
@@ -406,7 +408,23 @@ export default function ResumeBuilder() {
             {careers.map((c, i) => (
               <div key={c.id} style={st.itemCard}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                  <span style={{ fontWeight: 700, color: P.primary, fontSize: 15 }}>経歴 {i + 1}</span>
+                  <span style={{ fontWeight: 700, color: P.primary, fontSize: 15 }}>
+                    経歴 {i + 1}
+                    {c.isCurrent && (
+                      <span style={{
+                        marginLeft: 8,
+                        padding: "2px 8px",
+                        borderRadius: 12,
+                        background: P.accent,
+                        color: "#fff",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        verticalAlign: "middle",
+                      }}>
+                        現職
+                      </span>
+                    )}
+                  </span>
                   {careers.length > 1 && <XBtn onClick={() => rmCareer(c.id)} />}
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0 4%" }}>
@@ -618,9 +636,9 @@ export default function ResumeBuilder() {
                 }}
               >
                 {isBusy ? (
-                  <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span>{uploadMessage}</>
+                  <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span>生成中…</>
                 ) : (
-                  <>📄 PDFを生成してGoogle Driveに保存</>
+                  <>履歴書を生成する</>
                 )}
               </button>
 
@@ -629,16 +647,14 @@ export default function ResumeBuilder() {
                   padding: 14, borderRadius: 10, fontSize: 13, lineHeight: 1.6,
                   background: uploadStatus === "done" ? P.pLight : "#fdf0f0",
                   color: uploadStatus === "done" ? P.primary : P.danger,
+                  textAlign: "center",
+                  fontWeight: uploadStatus === "done" ? 600 : 400,
                 }}>
-                  {uploadMessage}
+                  {uploadStatus === "done"
+                    ? "生成が完了しましたので担当にお知らせください"
+                    : uploadMessage}
                 </div>
               )}
-
-              <div style={{ padding: 12, background: "#f9f8f6", borderRadius: 8, fontSize: 12, color: P.sub, lineHeight: 1.6 }}>
-                💡 ファイル名：<strong>{getFileName()}.pdf</strong><br />
-                保存先：Google Drive 指定フォルダ<br />
-                仕様：テキスト検索・コピー可能なPDF（Googleドキュメント経由で生成）
-              </div>
             </div>
           </div>
         );
