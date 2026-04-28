@@ -20,7 +20,7 @@ const nextId = () => _idCounter++;
 
 const mkCareer = () => ({
   id: nextId(), company: "", fromYear: "", fromMonth: "", toYear: "", toMonth: "",
-  isCurrent: false, position: "", rawDescription: "", refinedDescription: "", isRefining: false,
+  position: "", rawDescription: "", refinedDescription: "", isRefining: false,
 });
 const mkQual = () => ({ id: nextId(), name: "", year: "", month: "" });
 
@@ -182,9 +182,9 @@ const formatDate = (d) => {
 const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 現在`; })();
 const periodStr = (c) => {
   const from = c.fromYear && c.fromMonth ? `${c.fromYear}年${c.fromMonth}月` : "";
-  const to = c.isCurrent ? "現在" : (c.toYear && c.toMonth ? `${c.toYear}年${c.toMonth}月` : "");
-  if (from && to) return `${from} 〜 ${to}`;
-  if (from) return `${from} 〜`;
+  const hasTo = c.toYear && c.toMonth;
+  const to = hasTo ? `${c.toYear}年${c.toMonth}月` : "現在";
+  if (from) return `${from} 〜 ${to}`;
   return "";
 };
 
@@ -224,14 +224,16 @@ export default function ResumeBuilder() {
   const rmQualFn = useCallback((id) => setQuals((q) => q.length > 1 ? q.filter((x) => x.id !== id) : q), []);
 
   const handleRefineCareer = useCallback(async (id) => {
-    const c = careers.find((x) => x.id === id);
+    const idx = careers.findIndex((x) => x.id === id);
+    const c = careers[idx];
     if (!c || !c.rawDescription.trim()) return;
     uCareer(id, "isRefining", true);
 
-    // 期間文字列を組み立て
+    // 期間文字列を組み立て（toYear/toMonthが空なら「現在」扱い）
     const fromStr = (c.fromYear && c.fromMonth) ? `${c.fromYear}年${c.fromMonth}月` : "";
-    const toStr = c.isCurrent ? "現在" : ((c.toYear && c.toMonth) ? `${c.toYear}年${c.toMonth}月` : "");
-    const periodStr = (fromStr && toStr) ? `${fromStr} 〜 ${toStr}` : (fromStr || "");
+    const hasTo = c.toYear && c.toMonth;
+    const toStr = hasTo ? `${c.toYear}年${c.toMonth}月` : "現在";
+    const periodStr = fromStr ? `${fromStr} 〜 ${toStr}` : "";
 
     // 会社名・役職・期間をすべて context に含めて渡す
     const contextParts = [];
@@ -240,11 +242,14 @@ export default function ResumeBuilder() {
     if (periodStr) contextParts.push(`在籍期間：${periodStr}`);
     const context = contextParts.join("、");
 
+    // 「最新の経歴」= 配列の先頭（index 0）でWeb検索を実行
+    const isLatest = idx === 0;
+
     const r = await callRefineAPI(
       "career",
       c.rawDescription,
       context,
-      { isCurrent: !!c.isCurrent },
+      { isLatest },
     );
     if (r) uCareer(id, "refinedDescription", r);
     uCareer(id, "isRefining", false);
@@ -295,7 +300,6 @@ export default function ResumeBuilder() {
         fromMonth: c.fromMonth,
         toYear: c.toYear,
         toMonth: c.toMonth,
-        isCurrent: c.isCurrent,
         position: c.position,
         rawDescription: c.rawDescription,
         refinedDescription: c.refinedDescription,
@@ -400,8 +404,8 @@ export default function ResumeBuilder() {
                 事業内容・売上高・従業員数・上場区分は<strong>空欄で出力されます</strong>。
                 推測で誤った情報を埋めることはありません。
                 <br />
-                ※ Web検索による企業情報の取得は<strong>「現職」（現在もその会社に在籍中）の経歴のみ</strong>で実行されます。
-                過去の職歴は業務内容のメモを整形するだけです。
+                ※ Web検索による企業情報の取得は<strong>「経歴1（最新の経歴）」のみ</strong>で実行されます。
+                それ以外の経歴は業務内容のメモを整形するだけです。
               </div>
             </div>
 
@@ -410,7 +414,7 @@ export default function ResumeBuilder() {
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                   <span style={{ fontWeight: 700, color: P.primary, fontSize: 15 }}>
                     経歴 {i + 1}
-                    {c.isCurrent && (
+                    {i === 0 && (
                       <span style={{
                         marginLeft: 8,
                         padding: "2px 8px",
@@ -421,7 +425,7 @@ export default function ResumeBuilder() {
                         fontWeight: 600,
                         verticalAlign: "middle",
                       }}>
-                        現職
+                        最新の経歴
                       </span>
                     )}
                   </span>
@@ -431,27 +435,20 @@ export default function ResumeBuilder() {
                   <FormInput label="会社名" value={c.company} onChange={(v) => uCareer(c.id, "company", v)} placeholder="株式会社〇〇" required half />
                   <FormInput label="役職・部署" value={c.position} onChange={(v) => uCareer(c.id, "position", v)} placeholder="営業部 主任" half />
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", marginBottom: 16 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", marginBottom: 8 }}>
                   <YearMonthSelector labelPrefix="開始"
                     yearVal={c.fromYear} monthVal={c.fromMonth}
                     onYearChange={(v) => uCareer(c.id, "fromYear", v)}
                     onMonthChange={(v) => uCareer(c.id, "fromMonth", v)} />
                   <span style={{ fontSize: 20, color: P.sub, paddingBottom: 8 }}>〜</span>
-                  {c.isCurrent ? (
-                    <div style={{ paddingBottom: 10, fontSize: 14, fontWeight: 600, color: P.primary }}>現在</div>
-                  ) : (
-                    <YearMonthSelector labelPrefix="終了"
-                      yearVal={c.toYear} monthVal={c.toMonth}
-                      onYearChange={(v) => uCareer(c.id, "toYear", v)}
-                      onMonthChange={(v) => uCareer(c.id, "toMonth", v)} />
-                  )}
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, paddingBottom: 8, fontSize: 13, color: P.sub, cursor: "pointer", userSelect: "none" }}>
-                    <input type="checkbox" checked={c.isCurrent}
-                      onChange={(e) => uCareer(c.id, "isCurrent", e.target.checked)}
-                      style={{ accentColor: P.primary, width: 16, height: 16 }} />
-                    現職
-                  </label>
+                  <YearMonthSelector labelPrefix="終了"
+                    yearVal={c.toYear} monthVal={c.toMonth}
+                    onYearChange={(v) => uCareer(c.id, "toYear", v)}
+                    onMonthChange={(v) => uCareer(c.id, "toMonth", v)} />
                 </div>
+                <p style={{ fontSize: 11, color: P.sub, margin: "0 0 16px", lineHeight: 1.5 }}>
+                  ※ 現在も在籍中の場合は終了年月を空欄にしてください（自動的に「現在」と表示されます）
+                </p>
                 <FormTextarea label="業務内容（メモ・箇条書きOK）" value={c.rawDescription}
                   onChange={(v) => uCareer(c.id, "rawDescription", v)}
                   placeholder={"例：\n・法人向けITソリューションの営業\n・新規開拓メイン、年間売上1.2億\n・5人チームのリーダー"}

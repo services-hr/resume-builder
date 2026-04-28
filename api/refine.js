@@ -1,17 +1,17 @@
 /**
  * AI整形API
  *
- * - career(現職)：Web検索で企業情報を取得し、フォーマットに沿った構造化出力
- * - career(過去職)：業務内容メモを整形するだけ
+ * - career(最新の経歴)：Web検索で企業情報を取得し、フォーマットに沿った構造化出力
+ * - career(それ以外)：業務内容メモを整形するだけ
  * - skills, pr：従来通りの整形
  */
 
 /* ─── プロンプト定義 ─── */
 
-// 現職用：Web検索を活用してフォーマット出力
+// 最新の経歴用：Web検索を活用してフォーマット出力
 const buildCurrentCareerPrompt = (text, context) => `あなたは中途採用向けの職務経歴書を作成するプロのキャリアアドバイザーです。
 
-以下の現職情報を、指定のフォーマットに沿って整えてください。
+以下の経歴情報を、指定のフォーマットに沿って整えてください。
 
 【入力された経歴情報】
 ${context || "（記載なし）"}
@@ -71,7 +71,7 @@ ${context || "（記載なし）"}
 --- 業務内容メモ ---
 ${text}`;
 
-// 過去職用：業務内容のみ整える（検索なし）
+// それ以外の経歴用：業務内容のみ整える（検索なし）
 const buildPastCareerPrompt = (text, context) => `あなたは中途採用向けの職務経歴書を作成するプロのキャリアアドバイザーです。
 以下のメモ書きを職務経歴書に載せるのにふさわしい文章に整えてください。
 ルール：簡潔かつ具体的（数字を活かす）、体言止めや「〜を担当」の書き方、3〜5行、元の意味を変えない、整えた文章だけ返す。
@@ -107,7 +107,7 @@ export default async function handler(req, res) {
   if (req.method === "OPTIONS") return res.status(200).end();
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { type, text, context, isCurrent } = req.body;
+  const { type, text, context, isLatest } = req.body;
 
   if (!type || !text) {
     return res.status(400).json({ error: "type and text are required" });
@@ -123,9 +123,9 @@ export default async function handler(req, res) {
   let useWebSearch = false;
 
   if (type === "career") {
-    if (isCurrent) {
+    if (isLatest) {
       prompt = buildCurrentCareerPrompt(text, context);
-      useWebSearch = true; // 現職のみWeb検索
+      useWebSearch = true; // 最新の経歴のみWeb検索
     } else {
       prompt = buildPastCareerPrompt(text, context);
     }
@@ -144,7 +144,7 @@ export default async function handler(req, res) {
     messages: [{ role: "user", content: prompt }],
   };
 
-  // Web検索ツールを有効化（現職のキャリア整形のみ）
+  // Web検索ツールを有効化（最新の経歴のみ）
   if (useWebSearch) {
     requestBody.tools = [
       {
