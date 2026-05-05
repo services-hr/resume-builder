@@ -20,7 +20,7 @@ const nextId = () => _idCounter++;
 
 const mkCareer = () => ({
   id: nextId(), company: "", fromYear: "", fromMonth: "", toYear: "", toMonth: "",
-  isCurrent: false, position: "", rawDescription: "", refinedDescription: "", isRefining: false,
+  position: "", rawDescription: "", refinedDescription: "", isRefining: false,
 });
 const mkQual = () => ({ id: nextId(), name: "", year: "", month: "" });
 
@@ -182,9 +182,9 @@ const formatDate = (d) => {
 const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 現在`; })();
 const periodStr = (c) => {
   const from = c.fromYear && c.fromMonth ? `${c.fromYear}年${c.fromMonth}月` : "";
-  const to = c.isCurrent ? "現在" : (c.toYear && c.toMonth ? `${c.toYear}年${c.toMonth}月` : "");
-  if (from && to) return `${from} 〜 ${to}`;
-  if (from) return `${from} 〜`;
+  const hasTo = c.toYear && c.toMonth;
+  const to = hasTo ? `${c.toYear}年${c.toMonth}月` : "現在";
+  if (from) return `${from} 〜 ${to}`;
   return "";
 };
 
@@ -195,7 +195,8 @@ export default function ResumeBuilder() {
   const [step, setStep] = useState(0);
   const [anim, setAnim] = useState(true);
   const [basic, setBasic] = useState({
-    name: "", furigana: "", birthDate: "", email: "", phone: "", address: "", nearestStation: "",
+    lastName: "", firstName: "",
+    lastNameKana: "", firstNameKana: "",
   });
   const [careers, setCareers] = useState(() => [mkCareer()]);
   const [skillsRaw, setSkillsRaw] = useState("");
@@ -226,7 +227,21 @@ export default function ResumeBuilder() {
     const c = careers.find((x) => x.id === id);
     if (!c || !c.rawDescription.trim()) return;
     uCareer(id, "isRefining", true);
-    const r = await callRefineAPI("career", c.rawDescription, `会社名：${c.company}、役職：${c.position}`);
+
+    // 期間文字列を組み立て（toYear/toMonth空なら「現在」扱い）
+    const fromStr = (c.fromYear && c.fromMonth) ? `${c.fromYear}年${c.fromMonth}月` : "";
+    const hasTo = c.toYear && c.toMonth;
+    const toStr = hasTo ? `${c.toYear}年${c.toMonth}月` : "現在";
+    const periodTxt = fromStr ? `${fromStr} 〜 ${toStr}` : "";
+
+    // 会社名・役職・期間をすべて context に含めて渡す
+    const contextParts = [];
+    if (c.company) contextParts.push(`会社名：${c.company}`);
+    if (c.position) contextParts.push(`役職・部署：${c.position}`);
+    if (periodTxt) contextParts.push(`在籍期間：${periodTxt}`);
+    const context = contextParts.join("、");
+
+    const r = await callRefineAPI("career", c.rawDescription, context);
     if (r) uCareer(id, "refinedDescription", r);
     uCareer(id, "isRefining", false);
   }, [careers, uCareer]);
@@ -250,110 +265,60 @@ export default function ResumeBuilder() {
   const getFileName = () => {
     const d = new Date();
     const yyyymmdd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
-    const name = basic.name.trim() || "名前未入力";
+    const fullName = `${basic.lastName || ""} ${basic.firstName || ""}`.trim();
+    const name = fullName || "名前未入力";
     return `${name}_職務経歴書_${yyyymmdd}`;
   };
 
-  const loadScript = (src) => {
-    return new Promise((resolve, reject) => {
-      if (document.querySelector(`script[src="${src}"]`)) return resolve();
-      const s = document.createElement("script");
-      s.src = src;
-      s.onload = resolve;
-      s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  };
-
+  /* ────────────────────────────────────────
+     PDF GENERATION — server-side (Google Apps Script)
+     ─────────────────────────────────────── */
   const handleGenerateAndUpload = async () => {
-    if (!pdfRef.current) return;
     setUploadStatus("generating");
-    setUploadMessage("PDFを生成中…");
+    setUploadMessage("PDFを生成中… (Googleドキュメントで差し込み中)");
+
+    // 送信用にデータを整理
+    const payload = {
+      basic,
+      careers: careers.map((c) => ({
+        company: c.company,
+        fromYear: c.fromYear,
+        fromMonth: c.fromMonth,
+        toYear: c.toYear,
+        toMonth: c.toMonth,
+        position: c.position,
+        rawDescription: c.rawDescription,
+        refinedDescription: c.refinedDescription,
+      })),
+      skillsRaw,
+      skillsRefined,
+      qualifications: quals.map((q) => ({
+        name: q.name, year: q.year, month: q.month,
+      })),
+      prRaw,
+      prRefined,
+    };
 
     try {
-      // Load html2canvas and jsPDF from CDN
-      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js");
-      await loadScript("https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.2/jspdf.umd.min.js");
-
-      const element = pdfRef.current;
-      const canvas = await window.html2canvas(element, {
-        scale: 2,
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        logging: false,
-      });
-
-      const imgData = canvas.toDataURL("image/png");
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF("p", "mm", "a4");
-
-      const pdfWidth = 210;
-      const pdfHeight = 297;
-      const margin = 10;
-      const contentWidth = pdfWidth - margin * 2;
-
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = contentWidth / imgWidth;
-      const scaledHeight = imgHeight * ratio;
-
-      // Handle multi-page if content is taller than one page
-      const pageContentHeight = pdfHeight - margin * 2;
-      let remainingHeight = scaledHeight;
-      let sourceY = 0;
-
-      let pageNum = 0;
-      while (remainingHeight > 0) {
-        if (pageNum > 0) pdf.addPage();
-
-        const sliceHeight = Math.min(pageContentHeight, remainingHeight);
-        const sourceSliceHeight = sliceHeight / ratio;
-
-        // Create a temporary canvas for this page slice
-        const sliceCanvas = document.createElement("canvas");
-        sliceCanvas.width = imgWidth;
-        sliceCanvas.height = sourceSliceHeight;
-        const ctx = sliceCanvas.getContext("2d");
-        ctx.drawImage(canvas, 0, sourceY, imgWidth, sourceSliceHeight, 0, 0, imgWidth, sourceSliceHeight);
-
-        const sliceData = sliceCanvas.toDataURL("image/png");
-        pdf.addImage(sliceData, "PNG", margin, margin, contentWidth, sliceHeight);
-
-        sourceY += sourceSliceHeight;
-        remainingHeight -= sliceHeight;
-        pageNum++;
-      }
-
-      const pdfBase64 = pdf.output("datauristring").split(",")[1];
-      const fileName = getFileName();
-
-      // Also download locally
-      pdf.save(`${fileName}.pdf`);
-
-      // Upload to Google Drive
-      setUploadStatus("uploading");
-      setUploadMessage("Google Driveにアップロード中…");
-
-      const uploadRes = await fetch("/api/upload-to-drive", {
+      const res = await fetch("/api/generate-pdf", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pdfBase64, fileName }),
+        body: JSON.stringify({ data: payload }),
       });
 
-      const uploadData = await uploadRes.json();
+      const result = await res.json();
 
-      if (uploadData.success) {
+      if (res.ok && result.success) {
         setUploadStatus("done");
-        setUploadMessage(`✅ Google Driveに保存しました：${uploadData.fileName}`);
+        setUploadMessage(`✅ PDF生成・Google Drive保存が完了しました：${result.fileName}`);
       } else {
-        // PDF was downloaded locally, but Drive upload failed
         setUploadStatus("error");
-        setUploadMessage(`⚠️ PDFはダウンロードしましたが、Google Driveへの保存に失敗しました: ${uploadData.error || "不明なエラー"}`);
+        setUploadMessage(`❌ 生成に失敗しました：${result.error || "不明なエラー"}`);
       }
     } catch (error) {
-      console.error("PDF/Upload error:", error);
+      console.error("PDF generation error:", error);
       setUploadStatus("error");
-      setUploadMessage(`❌ エラーが発生しました: ${error.message}`);
+      setUploadMessage(`❌ サーバーとの通信に失敗しました: ${error.message}`);
     }
   };
 
@@ -365,21 +330,12 @@ export default function ResumeBuilder() {
         return (
           <div>
             <h2 style={st.h2}>基本情報を入力してください</h2>
-            <p style={st.desc}>求職者の基本的なプロフィール情報です。</p>
+            <p style={st.desc}>お名前とフリガナを入力してください。</p>
             <div style={{ display: "flex", flexWrap: "wrap", gap: "0 4%" }}>
-              <FormInput label="氏名" value={basic.name} onChange={(v) => uBasic("name", v)} placeholder="山田 太郎" required half />
-              <FormInput label="フリガナ" value={basic.furigana} onChange={(v) => uBasic("furigana", v)} placeholder="ヤマダ タロウ" half />
-              <FormInput label="生年月日" type="date" value={basic.birthDate} onChange={(v) => uBasic("birthDate", v)} required half />
-              <div style={{ width: "48%", marginBottom: 16 }}>
-                <label style={st.label}>年齢（自動計算）</label>
-                <div style={{ ...st.input, background: "#f5f3f0", color: P.sub }}>
-                  {basic.birthDate ? calcAge(basic.birthDate).replace(/[（）]/g, "") : "—"}
-                </div>
-              </div>
-              <FormInput label="メールアドレス" type="email" value={basic.email} onChange={(v) => uBasic("email", v)} placeholder="example@mail.com" half />
-              <FormInput label="電話番号" value={basic.phone} onChange={(v) => uBasic("phone", v)} placeholder="090-1234-5678" half />
-              <FormInput label="現住所" value={basic.address} onChange={(v) => uBasic("address", v)} placeholder="東京都渋谷区恵比寿1-2-3" />
-              <FormInput label="最寄駅" value={basic.nearestStation} onChange={(v) => uBasic("nearestStation", v)} placeholder="JR恵比寿駅 徒歩5分" half />
+              <FormInput label="姓" value={basic.lastName} onChange={(v) => uBasic("lastName", v)} placeholder="山田" required half />
+              <FormInput label="名" value={basic.firstName} onChange={(v) => uBasic("firstName", v)} placeholder="太郎" required half />
+              <FormInput label="姓（フリガナ）" value={basic.lastNameKana} onChange={(v) => uBasic("lastNameKana", v)} placeholder="ヤマダ" half />
+              <FormInput label="名（フリガナ）" value={basic.firstNameKana} onChange={(v) => uBasic("firstNameKana", v)} placeholder="タロウ" half />
             </div>
           </div>
         );
@@ -392,40 +348,111 @@ export default function ResumeBuilder() {
               業務内容はメモ書き・箇条書きでOK。
               <strong style={{ color: P.accent }}>「AIで整える」</strong>で職務経歴書向けに変換できます。
             </p>
+
+            {/* 注意書きボックス */}
+            <div style={{
+              background: "#fffcf0",
+              border: `1.5px solid ${P.accent}`,
+              borderRadius: 10,
+              padding: "14px 16px",
+              marginBottom: 20,
+              fontSize: 13,
+              lineHeight: 1.7,
+              color: P.text,
+            }}>
+              <div style={{ fontWeight: 700, color: P.accent, marginBottom: 8, fontSize: 14 }}>
+                ⚠️ 「AIで整える」を押す前にご確認ください
+              </div>
+              <div style={{ marginBottom: 8 }}>
+                AIが正確な情報を取得するため、以下を<strong>正式名称で</strong>記載してください：
+              </div>
+              <ul style={{ margin: "0 0 12px", paddingLeft: 20 }}>
+                <li><strong>会社欄</strong>：正式な会社名（例：「荏原」ではなく「株式会社荏原製作所」）</li>
+                <li><strong>役職・部署欄</strong>：正式な役職名・部署名</li>
+              </ul>
+
+              <div style={{
+                background: "#fff",
+                padding: "10px 12px",
+                borderRadius: 6,
+                marginBottom: 10,
+                lineHeight: 1.65,
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 6, color: P.text }}>
+                  📝 業務内容のメモに含めるべき項目（チェックリスト）
+                </div>
+                <div style={{ fontSize: 11, color: P.sub, marginBottom: 6 }}>
+                  以下の項目はAIがメモから抽出します。記載がないと出力が空欄になります。
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 20, fontSize: 12 }}>
+                  <li>☐ <strong>雇用形態</strong>（正社員／契約社員／派遣／業務委託 など）</li>
+                  <li>☐ <strong>職種</strong>（開発・設計／営業／マーケティング など）</li>
+                  <li>☐ <strong>対応商材</strong>（取り扱った製品・サービス）</li>
+                  <li>☐ <strong>業務内容</strong>（具体的に行った仕事の中身）</li>
+                  <li>☐ <strong>実績</strong>（具体的な数字や成果）</li>
+                  <li>☐ <strong>工夫した点</strong>（こだわり・問題解決の事例）</li>
+                </ul>
+              </div>
+
+              <div style={{
+                background: "#fff",
+                padding: "8px 10px",
+                borderRadius: 6,
+                fontSize: 12,
+                color: P.sub,
+                lineHeight: 1.6,
+              }}>
+                💡 <strong>会社情報がWeb検索で取得できない場合</strong>（同名企業が存在する、非公開企業、海外企業など）、
+                事業内容・売上高・従業員数・上場区分は<strong>空欄で出力されます</strong>。
+                推測で誤った情報を埋めることはありません。
+                <br />
+                ※ Web検索による企業情報の取得は<strong>すべての経歴で実行</strong>されます。
+              </div>
+            </div>
+
             {careers.map((c, i) => (
               <div key={c.id} style={st.itemCard}>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                  <span style={{ fontWeight: 700, color: P.primary, fontSize: 15 }}>経歴 {i + 1}</span>
+                  <span style={{ fontWeight: 700, color: P.primary, fontSize: 15 }}>
+                    経歴 {i + 1}
+                    {i === 0 && (
+                      <span style={{
+                        marginLeft: 8,
+                        padding: "2px 8px",
+                        borderRadius: 12,
+                        background: P.accent,
+                        color: "#fff",
+                        fontSize: 11,
+                        fontWeight: 600,
+                        verticalAlign: "middle",
+                      }}>
+                        最新の経歴
+                      </span>
+                    )}
+                  </span>
                   {careers.length > 1 && <XBtn onClick={() => rmCareer(c.id)} />}
                 </div>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: "0 4%" }}>
                   <FormInput label="会社名" value={c.company} onChange={(v) => uCareer(c.id, "company", v)} placeholder="株式会社〇〇" required half />
                   <FormInput label="役職・部署" value={c.position} onChange={(v) => uCareer(c.id, "position", v)} placeholder="営業部 主任" half />
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", marginBottom: 16 }}>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 16, alignItems: "flex-end", marginBottom: 8 }}>
                   <YearMonthSelector labelPrefix="開始"
                     yearVal={c.fromYear} monthVal={c.fromMonth}
                     onYearChange={(v) => uCareer(c.id, "fromYear", v)}
                     onMonthChange={(v) => uCareer(c.id, "fromMonth", v)} />
                   <span style={{ fontSize: 20, color: P.sub, paddingBottom: 8 }}>〜</span>
-                  {c.isCurrent ? (
-                    <div style={{ paddingBottom: 10, fontSize: 14, fontWeight: 600, color: P.primary }}>現在</div>
-                  ) : (
-                    <YearMonthSelector labelPrefix="終了"
-                      yearVal={c.toYear} monthVal={c.toMonth}
-                      onYearChange={(v) => uCareer(c.id, "toYear", v)}
-                      onMonthChange={(v) => uCareer(c.id, "toMonth", v)} />
-                  )}
-                  <label style={{ display: "flex", alignItems: "center", gap: 6, paddingBottom: 8, fontSize: 13, color: P.sub, cursor: "pointer", userSelect: "none" }}>
-                    <input type="checkbox" checked={c.isCurrent}
-                      onChange={(e) => uCareer(c.id, "isCurrent", e.target.checked)}
-                      style={{ accentColor: P.primary, width: 16, height: 16 }} />
-                    現職
-                  </label>
+                  <YearMonthSelector labelPrefix="終了"
+                    yearVal={c.toYear} monthVal={c.toMonth}
+                    onYearChange={(v) => uCareer(c.id, "toYear", v)}
+                    onMonthChange={(v) => uCareer(c.id, "toMonth", v)} />
                 </div>
+                <p style={{ fontSize: 11, color: P.sub, margin: "0 0 16px", lineHeight: 1.5 }}>
+                  ※ 現在も在籍中の場合は終了年月を空欄にしてください（自動的に「現在」と表示されます）
+                </p>
                 <FormTextarea label="業務内容（メモ・箇条書きOK）" value={c.rawDescription}
                   onChange={(v) => uCareer(c.id, "rawDescription", v)}
-                  placeholder={"例：\n・法人向けITソリューションの営業\n・新規開拓メイン、年間売上1.2億\n・5人チームのリーダー"}
+                  placeholder={"例：\n・正社員\n・営業職としてSaaS製品を担当\n・年間売上1.2億達成、20社の新規開拓\n・気持ちの良いコミュニケーションを意識"}
                   rows={4} hint="気軽にメモ書きしてください。AIが文章に整えます。" />
                 <AIBtn onClick={() => handleRefineCareer(c.id)} loading={c.isRefining} />
                 {c.refinedDescription && (
@@ -592,20 +619,12 @@ export default function ResumeBuilder() {
                 <tr>
                   <th style={st.thP}>氏名</th>
                   <td style={st.tdP}>
-                    {basic.furigana && <><span style={{ fontSize: 10, color: P.sub }}>{basic.furigana}</span><br /></>}
-                    <span style={{ fontSize: 16, fontWeight: 700 }}>{basic.name || "—"}</span>
-                    {basic.birthDate && <span style={{ fontSize: 12, color: P.sub, marginLeft: 8 }}>{formatDate(basic.birthDate)} 生 {calcAge(basic.birthDate)}</span>}
-                  </td>
-                </tr>
-                <tr>
-                  <th style={st.thP}>連絡先</th>
-                  <td style={st.tdP}>
-                    {basic.address && <div>{basic.address}</div>}
-                    <div style={{ display: "flex", gap: 24, flexWrap: "wrap", fontSize: 13 }}>
-                      {basic.phone && <span>TEL: {basic.phone}</span>}
-                      {basic.email && <span>Email: {basic.email}</span>}
-                    </div>
-                    {basic.nearestStation && <div style={{ fontSize: 12, color: P.sub }}>最寄駅: {basic.nearestStation}</div>}
+                    {(basic.lastNameKana || basic.firstNameKana) && (
+                      <><span style={{ fontSize: 10, color: P.sub }}>{`${basic.lastNameKana || ""} ${basic.firstNameKana || ""}`.trim()}</span><br /></>
+                    )}
+                    <span style={{ fontSize: 16, fontWeight: 700 }}>
+                      {(basic.lastName || basic.firstName) ? `${basic.lastName || ""} ${basic.firstName || ""}`.trim() : "—"}
+                    </span>
                   </td>
                 </tr>
               </tbody></table>
@@ -669,9 +688,9 @@ export default function ResumeBuilder() {
                 }}
               >
                 {uploadStatus === "generating" || uploadStatus === "uploading" ? (
-                  <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span>{uploadMessage}</>
+                  <><span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⏳</span>生成中…</>
                 ) : (
-                  <>📄 PDFを生成してGoogle Driveに保存</>
+                  <>履歴書を生成する</>
                 )}
               </button>
 
@@ -680,15 +699,14 @@ export default function ResumeBuilder() {
                   padding: 14, borderRadius: 10, fontSize: 13, lineHeight: 1.6,
                   background: uploadStatus === "done" ? P.pLight : "#fdf0f0",
                   color: uploadStatus === "done" ? P.primary : P.danger,
+                  textAlign: "center",
+                  fontWeight: uploadStatus === "done" ? 600 : 400,
                 }}>
-                  {uploadMessage}
+                  {uploadStatus === "done"
+                    ? "生成が完了しましたので担当にお知らせください"
+                    : uploadMessage}
                 </div>
               )}
-
-              <div style={{ padding: 12, background: "#f9f8f6", borderRadius: 8, fontSize: 12, color: P.sub, lineHeight: 1.6 }}>
-                💡 ファイル名：<strong>{getFileName()}.pdf</strong><br />
-                保存先：Google Drive 指定フォルダ
-              </div>
             </div>
           </div>
         );
