@@ -10,7 +10,7 @@
 //   コスパ重視（推奨）: "claude-sonnet-4-6"
 //   最高品質         : "claude-opus-4-8"
 // ─────────────────────────────────────────────
-const MODEL = "claude-sonnet-4-6";
+const MODEL = "claude-opus-4-8";
 
 // 経歴整形用：Web検索を活用してフォーマット出力
 const buildCurrentCareerPrompt = (text, context) => `あなたは中途採用向けの職務経歴書を作成するプロのキャリアアドバイザーです。
